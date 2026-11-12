@@ -31,7 +31,7 @@ WEIGHTS="$USER_HOME/.cache/torch/checkpoints/$WEIGHTS_NAME"
 REG_MODULE="${REGISTER%.py}"
 
 # ---- sanity checks ----------------------------------------------------
-for f in "$REGISTER" "$RECOGNIZE" "$PAM_HELPER"; do
+for f in "$REGISTER" "$RECOGNIZE" "$PAM_HELPER" "config.yaml"; do
     [[ -f "$SRC/$f" ]] || { echo "Missing $SRC/$f"; exit 1; }
 done
 
@@ -68,7 +68,7 @@ command -v uv >/dev/null || { echo "uv is not installed: sudo pacman -S uv"; exi
 # ---- copy files -------------------------------------------------------
 echo "Copying files to $DEST ..."
 mkdir -p "$DEST/data" "$DEST/torch/checkpoints"
-cp "$SRC/$REGISTER" "$SRC/$RECOGNIZE" "$SRC/$PAM_HELPER" "$DEST/"
+cp "$SRC/$REGISTER" "$SRC/$RECOGNIZE" "$SRC/$PAM_HELPER" "$SRC/config.yaml" "$DEST/"
 cp "${faces[@]}" "$DEST/data/"
 cp "$WEIGHTS" "$DEST/torch/checkpoints/$WEIGHTS_NAME"
 
@@ -83,7 +83,7 @@ PY="$DEST/.venv/bin/python"
 uv pip install --python "$PY" torch torchvision --index-url https://download.pytorch.org/whl/cpu
 uv pip install --python "$PY" "mediapipe==0.10.14" "numpy<2"
 uv pip install --python "$PY" facenet-pytorch --no-deps
-uv pip install --python "$PY" pillow requests tqdm
+uv pip install --python "$PY" pillow requests tqdm pyyaml
 
 # ---- lock down permissions --------------------------------------------
 chown -R root:root "$DEST"
@@ -101,4 +101,3 @@ echo "PAM line for /etc/pam.d/sudo (add it ABOVE the first 'auth' line):"
 echo "  auth  sufficient  pam_exec.so quiet stdout $PY $DEST/$PAM_HELPER"
 echo
 echo "When you change faces (register/delete), run this installer again."
-
