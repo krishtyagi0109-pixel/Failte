@@ -1,3 +1,5 @@
+import copy
+
 import re
 
 from pathlib import Path
@@ -10,19 +12,70 @@ import numpy as np
 
 import torch
 
+import yaml
+
 from facenet_pytorch import InceptionResnetV1
 
 # ----------------------------- Config ---------------------------------
-DATA_DIR = Path("data")
-MAX_FACES = 2
-MIN_SAMPLES = 10
-MAX_NAME_LEN = 30
+BASE_DIR = Path(__file__).resolve().parent
+
+
+DEFAULT_CONFIG = {
+    "camera_index": 0,
+    "data_dir": "data",
+    "registration": {
+        "max_faces": 2,
+        "min_samples": 10,
+        "max_name_length": 30,
+        "min_face_size": 80,
+        "blur_threshold": 30.0,
+        "crop_margin": 0.20,
+        "duplicate_threshold": 0.75,
+    },
+    "recognition": {
+        "threshold": 0.75,
+        "margin": 0.05,
+        "show_name": False,
+        "show_score": True,
+    },
+    "pam": {"scan_timeout": 8.0, "required_hits": 5},
+}
+
+
+def load_config() -> dict:
+    """Defaults, overridden by config.yaml (next to this file) if it exists."""
+    cfg = copy.deepcopy(DEFAULT_CONFIG)
+    path = BASE_DIR / "config.yaml"
+    if not path.exists():
+        return cfg
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            user = yaml.safe_load(f) or {}
+    except (OSError, yaml.YAMLError) as e:
+        print(f"Warning: could not read {path} ({e}). Using defaults.")
+        return cfg
+    for key, value in user.items():
+        if isinstance(value, dict) and isinstance(cfg.get(key), dict):
+            cfg[key].update(value)
+        else:
+            cfg[key] = value
+    return cfg
+
+
+CFG = load_config()
+CAMERA_INDEX = CFG["camera_index"]
+DATA_DIR = BASE_DIR / CFG["data_dir"]
+
+_reg = CFG["registration"]
+MAX_FACES = _reg["max_faces"]
+MIN_SAMPLES = _reg["min_samples"]
+MAX_NAME_LEN = _reg["max_name_length"]
 NAME_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 
-MIN_FACE_SIZE = 80          # px, smallest accepted face box side
-BLUR_THRESHOLD = 30.0       # Laplacian variance; lower = blurrier
-CROP_MARGIN = 0.20          # extra context around the detected box
-DUPLICATE_THRESHOLD = 0.75  # cosine similarity above this = "same person"
+MIN_FACE_SIZE = _reg["min_face_size"]           
+BLUR_THRESHOLD = _reg["blur_threshold"]         
+CROP_MARGIN = _reg["crop_margin"]                
+DUPLICATE_THRESHOLD = _reg["duplicate_threshold"]  
 
 DEVICE = torch.device("cpu")
 
@@ -109,7 +162,7 @@ def draw_chip(frame, text: str, box, color):
     tw = text_width(text, 0.5)
     ch = 26
     top = y1 - ch - 4
-    if top < HEADER_H + 4:          # no room above -> place below the box
+    if top < HEADER_H + 4:          
         top = y2 + 4
     overlay_rect(frame, (x1, top), (x1 + tw + 20, top + ch), color, 0.90)
     put_text(frame, text, (x1 + 10, top + 18), 0.5, (20, 20, 20))
@@ -210,7 +263,7 @@ def capture_reference(model, file_name: str) -> np.ndarray | None:
     detector = mp.solutions.face_detection.FaceDetection(
         model_selection=0, min_detection_confidence=0.6
     )
-    cap = cv2.VideoCapture(0)
+    cap = cv2.VideoCapture(CAMERA_INDEX)
     embeddings: list[np.ndarray] = []
     toast, toast_color = "", WHITE
     window = "Face Registration"
@@ -362,7 +415,7 @@ def register_face(model, db: dict[str, np.ndarray]) -> None:
     if reference is None:
         return
 
-    # Prevent registering the same person twice under different file names
+  
     for other_name, other_ref in db.items():
         sim = float(np.dot(reference, other_ref))
         if sim >= DUPLICATE_THRESHOLD:
