@@ -16,17 +16,17 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 DATA = BASE / "data"
 
-# If the install script bundled the model weights, use them (root has no cache)
+
 if (BASE / "torch").exists():
     os.environ["TORCH_HOME"] = str(BASE / "torch")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("GLOG_minloglevel", "2")
 
-# Settings (camera_index, pam.scan_timeout, pam.required_hits) come from config.yaml
+
 
 
 def log(msg: str) -> None:
-    service = os.environ.get("PAM_SERVICE", "-")      # sudo, ...
+    service = os.environ.get("PAM_SERVICE", "-")      
     syslog.openlog("falite", syslog.LOG_PID, syslog.LOG_AUTH)
     syslog.syslog(syslog.LOG_INFO, f"[{service}] {msg}")
 
@@ -34,7 +34,7 @@ def log(msg: str) -> None:
 def say(msg: str) -> None:
     try:
         print(f"Falite: {msg}", flush=True)
-    except OSError:                                    # caller closed the pipe
+    except OSError:                                
         try:
             os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
         except Exception:
@@ -71,7 +71,7 @@ def verify(user: str) -> bool:
     import register as rf
     from recognize import identify
 
-    rf.DATA_DIR = DATA                       # absolute path, not cwd-relative
+    rf.DATA_DIR = DATA                       # absolute path
     db = rf.load_db()
     if user not in db:
         log(f"no registered face file for user '{user}'")
@@ -102,7 +102,7 @@ def verify(user: str) -> bool:
                 time.sleep(0.05)
                 continue
 
-            frame = cv2.flip(frame, 1)       # same mirroring as registration
+            frame = cv2.flip(frame, 1)       
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w = frame.shape[:2]
             matched = False
@@ -140,7 +140,7 @@ def main() -> int:
     test_mode = "--test" in sys.argv
     user = os.environ.get("PAM_USER")
     if not user and test_mode:
-        user = os.environ.get("SUDO_USER")   # "sudo ... --test" tests the real user
+        user = os.environ.get("SUDO_USER")  
     if not user:
         user = pwd.getpwuid(os.getuid()).pw_name
 
@@ -153,7 +153,7 @@ def main() -> int:
 
     try:
         ok = verify(user)
-    except Exception as exc:                 # fail closed on ANY error
+    except Exception as exc:              
         log(f"error: {exc!r}")
         say("error, skipping face login")
         if test_mode:
