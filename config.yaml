@@ -1,0 +1,21 @@
+camera_index: 0          
+data_dir: data          
+
+registration:
+  max_faces: 2           
+  min_samples: 10        
+  max_name_length: 30    
+  min_face_size: 80      
+  blur_threshold: 30.0   
+  crop_margin: 0.20    
+  duplicate_threshold: 0.75   
+
+recognition:
+  threshold: 0.75        
+  margin: 0.05          
+  show_name: false       
+  show_score: true       
+
+pam:
+  scan_timeout: 8.0      
+  required_hits: 5 
