@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-
 import os
 
 import pwd
@@ -17,25 +16,29 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 DATA = BASE / "data"
 
-
+# If the install script bundled the model weights, use them (root has no cache)
 if (BASE / "torch").exists():
     os.environ["TORCH_HOME"] = str(BASE / "torch")
 os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "3")
 os.environ.setdefault("GLOG_minloglevel", "2")
 
-# ----------------------------- Config ---------------------------------
-CAMERA_INDEX = 0
-SCAN_TIMEOUT = 8.0    
-REQUIRED_HITS = 5      
+# Settings (camera_index, pam.scan_timeout, pam.required_hits) come from config.yaml
 
 
 def log(msg: str) -> None:
+    service = os.environ.get("PAM_SERVICE", "-")      # sudo, ...
     syslog.openlog("falite", syslog.LOG_PID, syslog.LOG_AUTH)
-    syslog.syslog(syslog.LOG_INFO, msg)
+    syslog.syslog(syslog.LOG_INFO, f"[{service}] {msg}")
 
 
 def say(msg: str) -> None:
-    print(f"Falite: {msg}", flush=True)
+    try:
+        print(f"Falite: {msg}", flush=True)
+    except OSError:                                    # caller closed the pipe
+        try:
+            os.dup2(os.open(os.devnull, os.O_WRONLY), sys.stdout.fileno())
+        except Exception:
+            pass
 
 
 def is_unsafe(path: Path) -> bool:
@@ -50,7 +53,9 @@ def check_permissions() -> str | None:
     Otherwise anyone who can edit these files could make this script always
     succeed and gain root through sudo.
     """
-    targets = [BASE, Path(__file__).resolve(), DATA, *DATA.glob("*.npy")]
+    targets = [BASE, DATA, *BASE.glob("*.py"), *DATA.glob("*.npy")]
+    if (BASE / "config.yaml").exists():
+        targets.append(BASE / "config.yaml")
     for p in targets:
         if is_unsafe(p):
             return f"unsafe permissions on {p}"
@@ -66,7 +71,7 @@ def verify(user: str) -> bool:
     import register as rf
     from recognize import identify
 
-    rf.DATA_DIR = DATA                       # absolute path
+    rf.DATA_DIR = DATA                       # absolute path, not cwd-relative
     db = rf.load_db()
     if user not in db:
         log(f"no registered face file for user '{user}'")
@@ -77,7 +82,7 @@ def verify(user: str) -> bool:
     detector = mp.solutions.face_detection.FaceDetection(
         model_selection=0, min_detection_confidence=0.6
     )
-    cap = cv2.VideoCapture(CAMERA_INDEX)
+    cap = cv2.VideoCapture(rf.CAMERA_INDEX)
 
     try:
         if not cap.isOpened():
@@ -88,7 +93,8 @@ def verify(user: str) -> bool:
         say("looking for your face...")
         hits = 0
         best = 0.0
-        deadline = time.time() + SCAN_TIMEOUT
+        required_hits = rf.CFG["pam"]["required_hits"]
+        deadline = time.time() + rf.CFG["pam"]["scan_timeout"]
 
         while time.time() < deadline:
             ret, frame = cap.read()
@@ -96,7 +102,7 @@ def verify(user: str) -> bool:
                 time.sleep(0.05)
                 continue
 
-            frame = cv2.flip(frame, 1)       
+            frame = cv2.flip(frame, 1)       # same mirroring as registration
             rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             h, w = frame.shape[:2]
             matched = False
@@ -117,7 +123,7 @@ def verify(user: str) -> bool:
                         matched = (name == user)
 
             hits = hits + 1 if matched else 0
-            if hits >= REQUIRED_HITS:
+            if hits >= required_hits:
                 log(f"face verified for '{user}' (best score {best:.2f})")
                 say("face verified")
                 return True
@@ -134,7 +140,7 @@ def main() -> int:
     test_mode = "--test" in sys.argv
     user = os.environ.get("PAM_USER")
     if not user and test_mode:
-        user = os.environ.get("SUDO_USER")   
+        user = os.environ.get("SUDO_USER")   # "sudo ... --test" tests the real user
     if not user:
         user = pwd.getpwuid(os.getuid()).pw_name
 
@@ -147,7 +153,7 @@ def main() -> int:
 
     try:
         ok = verify(user)
-    except Exception as exc:                 
+    except Exception as exc:                 # fail closed on ANY error
         log(f"error: {exc!r}")
         say("error, skipping face login")
         if test_mode:
